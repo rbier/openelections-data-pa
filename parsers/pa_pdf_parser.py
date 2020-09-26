@@ -13,6 +13,9 @@ class PDFStringIterator:
         self._strings = strings
         self._strings_offset = 0
 
+    def get_processed_strings(self):
+        return self._strings[:self._strings_offset]
+
     def get_remaining_strings(self):
         return self._strings[self._strings_offset:]
 
@@ -20,10 +23,12 @@ class PDFStringIterator:
         return self._strings_offset < len(self._strings)
 
     def _get_next_string(self):
-        s = self._strings[self._strings_offset]
+        s = self._peek_next_string()
         self._strings_offset += 1
         return s
 
+    def _peek_next_string(self):
+        return self._strings[self._strings_offset]
 
 class PDFPageIterator:
     def __init__(self, filename):
