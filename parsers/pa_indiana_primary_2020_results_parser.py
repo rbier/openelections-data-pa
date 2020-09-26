@@ -1,11 +1,11 @@
-from collections import namedtuple
 import csv
 import os
-from parsers.pa_pdf_parser import PDFPageIterator, PDFStringIterator
 from parsers.constants.pa_candidates_2020 import STATEWIDE_PRIMARY_CANDIDATES
+from parsers.electionware_pdf_parser import pdf_to_csv, Candidate, ElectionwareOffice, \
+    ElectionwarePDFPageParser, ElectionwarePDFTableBodyParser, ElectionwarePDFTableHeaderParser
+from parsers.pa_pdf_parser import PDFPageIterator
 
 
-# Uses Electionware Custom Table Report PDF format
 COUNTY = 'Indiana'
 
 OUTPUT_FILE = os.path.join('..', '2020', '20200602__pa__primary__indiana__precinct.csv')
@@ -24,7 +24,6 @@ INDIANA_HEADER = [
 
 FIRST_FOOTER_SUBSTRING = 'June 2, 2020 General Primary Election'
 FIRST_ROW_PRECINCT = 'ARMAGH'
-LAST_ROW_PRECINCT = 'Totals'
 
 VALID_HEADERS = {
     'STATISTICS',
@@ -43,22 +42,10 @@ VALID_HEADERS = {
     'ALTERNATE DELEGATE TO THE REPUBLICAN NATIONAL CONVENTION',
 }
 
-HEADER_TO_OFFICE  = {
-    'PRESIDENT OF THE UNITED STATES': 'President',
-    'REPRESENTATIVE IN CONGRESS': 'U.S. House',
-    'SENATOR IN THE GENERAL ASSEMBLY': 'State Senate',
-    'REPRESENTATIVE IN THE GENERAL ASSEMBLY': 'General Assembly',
-}
-
 OFFICES_WITH_DISTRICTS = {
     'REPRESENTATIVE IN CONGRESS': 15,
     'SENATOR IN THE GENERAL ASSEMBLY': 41,
     'REPRESENTATIVE IN THE GENERAL ASSEMBLY': None,
-}
-
-PARTIES = {
-    'DEM',
-    'REP',
 }
 
 PARTY_TO_ABBREVIATION = {
@@ -685,116 +672,49 @@ GREEDY_SUBHEADER_PAIRS = {
     ('Write-in: Struzzi', 'Jim'),
 }
 
-Candidate = namedtuple('Candidate', 'office district party name')
-ParsedRow = namedtuple('ParsedRow', 'county precinct office district party candidate votes')
+
+class IndianaOffice(ElectionwareOffice):
+    _valid_headers = VALID_HEADERS
+    _offices_with_districts = OFFICES_WITH_DISTRICTS
 
 
-class Office:
-    def __init__(self, s):
-        self.name = s
-        self.district = ''
-        self.party = ''
-        self.extract_party()
-
-    def append(self, s):
-        if not self.name:
-            self.name = s
-        else:
-            self.name += ' ' + s
-        self._trim_spaces()
-
-    def extract_party(self):
-        if self.name in PARTIES:
-            self.party = self.name
-            self.name = ''
-        elif ' ' in self.name:
-            prefix, suffix = self.name.split(' ', 1)
-            if prefix in PARTIES:
-                self.party, self.name = prefix, suffix
-
-    def extract_district(self):
-        for office_with_district in OFFICES_WITH_DISTRICTS:
-            if office_with_district in self.name:
-                self.district = OFFICES_WITH_DISTRICTS.get(office_with_district)
-                if self.district is None:
-                    self.name, self.district = self.name.rsplit(' ', 1)
-                    if self.district == 'DISTRICT':
-                        self.name, self.district = self.name.rsplit(' ', 1)
-                    for stripped_string in ('ST', 'ND', 'RD', 'TH'):
-                        self.district = self.district.replace(stripped_string, '')
-                    self.district = int(self.district)
-
-    def is_valid(self):
-        return self.name in VALID_HEADERS
-
-    def normalize(self):
-        self.name = HEADER_TO_OFFICE.get(self.name, self.name)
-
-    def _trim_spaces(self):
-        self.name = self.name.replace('ASSEMBL Y', 'ASSEMBLY')
-
-
-class IndianaPDFTableHeaderParser(PDFStringIterator):
-    def __init__(self, strings, previous_table_header):
-        super().__init__(strings)
-        self._candidates = None
-        self._previous_table_header = previous_table_header
-
-    def get_candidates(self):
-        if self._candidates is None:
-            self._parse()
-        return self._candidates
-
-    def get_table_headers(self):
-        if self._candidates is None:
-            self._parse()
-        return self.get_processed_strings()
-
-    def _parse(self):
-        offices = list(self._parse_headers())
-        self._candidates = list(self._parse_subheaders(offices))
+class IndianaPDFTableHeaderParser(ElectionwarePDFTableHeaderParser):
+    _office_clazz = IndianaOffice
 
     def _parse_headers(self):
         office = None
         while True:
-            s = self._get_next_string()
-            if not office:
-                office = Office(s)
-            else:
-                office.append(s)
+            office = self._process_next_header_string(office)
             if office.is_valid():
                 office.extract_district()
                 office.normalize()
                 yield office
                 office = None
-                for skipped_header_string in SKIPPED_HEADER_STRINGS:
-                    while skipped_header_string in self._peek_next_string():
-                        self._get_next_string()  # skip 'VOTE FOR X' and 'X of X Precincts Reporting' strings
+                self._skip_extraneous_header_strings()
                 if not self._next_string_is_header_string():
                     break
 
-    def _parse_subheaders(self, offices):
-        for office in offices:
-            candidate = None
-            while self._more_subheaders_exist():
-                s = self._get_next_string()
-                if self._ignorable_string(s):
-                    continue
-                if not candidate:
-                    candidate = s
-                else:
-                    candidate += ' ' + s
-                if candidate in VALID_SUBHEADERS:
-                    if (candidate, self._peek_next_string()) in GREEDY_SUBHEADER_PAIRS:
-                        continue  # prevent greedy column parse
-                    yield from self._process_candidate(candidate, office)
-                    if candidate == 'Contest Total':
-                        break
-                    candidate = None
+    def _parse_subheader(self, office):
+        candidate = None
+        while self._more_subheaders_exist():
+            candidate = self._process_next_subheader_string(candidate)
+            if candidate in VALID_SUBHEADERS:
+                if (candidate, self._peek_next_string()) in GREEDY_SUBHEADER_PAIRS:
+                    continue  # prevent greedy column parse
+                yield from self._process_candidate(candidate, office)
+                if candidate == 'Contest Total':
+                    break
+                candidate = None
 
     def _next_string_is_header_string(self):
         s = self._peek_next_string()
         return s == 'STATISTICS' or s.startswith('DEM') or s.startswith('REP')
+
+    def _skip_extraneous_header_strings(self):
+        # skip 'VOTE FOR X' and 'X of X Precincts Reporting' strings
+        for skipped_header_string in SKIPPED_HEADER_STRINGS:
+            while skipped_header_string in self._peek_next_string():
+                self._get_next_string()
 
     def _more_subheaders_exist(self):
         if self._previous_table_header:
@@ -802,51 +722,23 @@ class IndianaPDFTableHeaderParser(PDFStringIterator):
                 return False
         return self._peek_next_string() != FIRST_ROW_PRECINCT
 
-    @staticmethod
-    def _ignorable_string(s):
-        return s == '-' or s.startswith('VOTE FOR')
-
-    @staticmethod
-    def _process_candidate(candidate, office):
+    @classmethod
+    def _process_candidate(self, candidate, office):
         if office.name == 'STATISTICS':
             candidate, party_full = candidate.split(' - ')
             party = PARTY_TO_ABBREVIATION.get(party_full, party_full)
             yield Candidate(candidate, '', party, '')
         else:
+            candidate = candidate.replace('Write-in: ', '')
             yield Candidate(office.name, office.district, office.party, candidate)
 
 
-class IndianaPDFTableBodyParser(PDFStringIterator):
-    def __init__(self, strings, candidates):
-        super().__init__(strings)
-        self._candidates = candidates
-        self._table_is_done = False
+class IndianaPDFTableBodyParser(ElectionwarePDFTableBodyParser):
+    _first_footer_substring = FIRST_FOOTER_SUBSTRING
+    _county = COUNTY
 
-    def __iter__(self):
-        while self._has_next_string() and not self._table_is_done:
-            if self._peek_next_string().startswith(FIRST_FOOTER_SUBSTRING):
-                break
-            precinct = self._get_next_string()
-            yield from self._parse_row(precinct)
-
-    def table_is_done(self):
-        return self._table_is_done
-
-    def _parse_row(self, precinct):
-        self._table_is_done = precinct == LAST_ROW_PRECINCT
-        for candidate in self._candidates:
-            if self._table_is_done and self._peek_next_string().startswith(FIRST_FOOTER_SUBSTRING):
-                # totals row may not necessarily contain every column
-                break
-            votes = self._get_next_string()
-            if not self._table_is_done and not self._candidate_is_invalid(candidate):
-                votes = int(votes.replace(',', ''))
-                yield ParsedRow(COUNTY, precinct.title(), candidate.office.title(),
-                                candidate.district, candidate.party,
-                                candidate.name.replace('Write-in: ', '').title(), votes)
-
-    @staticmethod
-    def _candidate_is_invalid(candidate):
+    @classmethod
+    def _candidate_is_invalid(self, candidate):
         if candidate.party == 'Blank':
             return True
         if candidate.office == 'Voter Turnout' or 'DELEGATE' in candidate.office:
@@ -854,50 +746,15 @@ class IndianaPDFTableBodyParser(PDFStringIterator):
         return candidate.name in ('Total Votes Cast', 'Contest Total', 'Write-in Totals')
 
 
-class IndianaPDFPageParser:
-    def __init__(self, page, previous_table_header):
-        self._active_table_header = None
-        self._table_body_parser = None
-        strings = page.get_strings()
-        header = strings[:len(INDIANA_HEADER)]
-        assert (header == INDIANA_HEADER)
-        self._strings = strings[len(INDIANA_HEADER):]
-        self._previous_table_header = previous_table_header
-
-    def __iter__(self):
-        while not self.page_is_done():
-            table_header_parser = IndianaPDFTableHeaderParser(self._strings, self._previous_table_header)
-            candidates = table_header_parser.get_candidates()
-            if not candidates:
-                # any page without valid candidates has no additional
-                # tables and is therefore skippable
-                break
-            self._table_headers = table_header_parser.get_table_headers()
-            self._strings = table_header_parser.get_remaining_strings()
-            self._table_body_parser = IndianaPDFTableBodyParser(self._strings, candidates)
-            yield from iter(self._table_body_parser)
-            self._strings = self._table_body_parser.get_remaining_strings()
-
-    def page_is_done(self):
-        return self._strings[0].startswith(FIRST_FOOTER_SUBSTRING)
-
-    def get_continued_table_header(self):
-        if self._table_body_parser.table_is_done():
-            return None
-        return self._table_headers
-
-
-def pdf_to_csv(pdf, csv_writer):
-    csv_writer.writeheader()
-    previous_table_header = None
-    for page in pdf:
-        print(f'processing page {page.get_page_number()}')
-        pdf_page_parser = IndianaPDFPageParser(page, previous_table_header)
-        for row in pdf_page_parser:
-            csv_writer.writerow(row._asdict())
-        previous_table_header = pdf_page_parser.get_continued_table_header()
+class IndianaPDFPageParser(ElectionwarePDFPageParser):
+    _standard_header = INDIANA_HEADER
+    _first_footer_substring = FIRST_FOOTER_SUBSTRING
+    _table_header_parser_clazz = IndianaPDFTableHeaderParser
+    _table_body_parser_clazz = IndianaPDFTableBodyParser
 
 
 if __name__ == "__main__":
     with open(OUTPUT_FILE, 'w', newline='') as f:
-        pdf_to_csv(PDFPageIterator(INDIANA_FILE), csv.DictWriter(f, OUTPUT_HEADER))
+        pdf_to_csv(PDFPageIterator(INDIANA_FILE),
+                   csv.DictWriter(f, OUTPUT_HEADER),
+                   IndianaPDFPageParser)
