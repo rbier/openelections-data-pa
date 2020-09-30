@@ -1,7 +1,7 @@
 import csv
 import os
 from parsers.constants.pa_candidates_2020 import STATEWIDE_PRIMARY_CANDIDATES
-from parsers.electionware_pdf_parser import pdf_to_csv, Candidate, ElectionwareOffice, \
+from parsers.electionware_pdf_parser_variant import pdf_to_csv, Candidate, ElectionwareOffice, \
     ElectionwarePDFPageParser, ElectionwarePDFTableBodyParser, ElectionwarePDFTableHeaderParser
 from parsers.pa_pdf_parser import PDFPageIterator
 
