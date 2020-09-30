@@ -1,8 +1,9 @@
 import csv
 import os
 from parsers.pa_pdf_parser import PDFPageIterator
-from parsers.electionware_parser import pdf_to_csv, ElectionwarePDFStringIterator, \
-    ElectionwarePDFTableParser, ElectionwarePDFPageParser
+from parsers.electionware.per_precinct_parser import electionware_per_precinct_pdf_to_csv,\
+    ElectionwarePerPrecinctPDFStringIterator, ElectionwarePerPrecinctPDFTableParser,\
+    ElectionwarePerPrecinctPDFPageParser
 
 COUNTY = 'Schuylkill'
 
@@ -65,12 +66,12 @@ BUGGY_ROWS = [
 ]
 
 
-class SchuylkillPDFStringIterator(ElectionwarePDFStringIterator):
+class SchuylkillPDFStringIterator(ElectionwarePerPrecinctPDFStringIterator):
     _first_footer_substring = FIRST_FOOTER_SUBSTRING
     _second_footer_substring = SECOND_FOOTER_SUBSTRING
 
 
-class SchuylkillPDFTableParser(ElectionwarePDFTableParser):
+class SchuylkillPDFTableParser(ElectionwarePerPrecinctPDFTableParser):
     _county = COUNTY
     _expected_table_headers = EXPECTED_TABLE_HEADERS
     _openelections_mapped_header = OPENELECTIONS_MAPPED_HEADER
@@ -102,7 +103,7 @@ class SchuylkillPDFTableParser(ElectionwarePDFTableParser):
         return True
 
 
-class SchuylkillPDFPageParser(ElectionwarePDFPageParser):
+class SchuylkillPDFPageParser(ElectionwarePerPrecinctPDFPageParser):
     _pdf_string_iterator_clazz = SchuylkillPDFStringIterator
     _pdf_table_parser_clazz = SchuylkillPDFTableParser
     _header = SCHUYLKILL_HEADER
@@ -110,6 +111,6 @@ class SchuylkillPDFPageParser(ElectionwarePDFPageParser):
 
 if __name__ == "__main__":
     with open(OUTPUT_FILE, 'w', newline='') as f:
-        pdf_to_csv(PDFPageIterator(SCHUYLKILL_FILE),
-                   csv.DictWriter(f, OUTPUT_HEADER),
-                   SchuylkillPDFPageParser)
+        electionware_per_precinct_pdf_to_csv(PDFPageIterator(SCHUYLKILL_FILE),
+                                             csv.DictWriter(f, OUTPUT_HEADER),
+                                             SchuylkillPDFPageParser)

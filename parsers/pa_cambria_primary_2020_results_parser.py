@@ -1,8 +1,9 @@
 import csv
 import os
 from parsers.pa_pdf_parser import PDFPageIterator
-from parsers.electionware_parser import pdf_to_csv, ElectionwarePDFStringIterator, \
-    ElectionwarePDFTableParser, ElectionwarePDFPageParser
+from parsers.electionware.per_precinct_parser import electionware_per_precinct_pdf_to_csv, \
+    ElectionwarePerPrecinctPDFStringIterator, ElectionwarePerPrecinctPDFTableParser, \
+    ElectionwarePerPrecinctPDFPageParser
 
 COUNTY = 'Cambria'
 
@@ -59,12 +60,12 @@ RAW_OFFICE_TO_OFFICE_AND_DISTRICT = {
 }
 
 
-class CambriaPDFStringIterator(ElectionwarePDFStringIterator):
+class CambriaPDFStringIterator(ElectionwarePerPrecinctPDFStringIterator):
     _first_footer_substring = FIRST_FOOTER_SUBSTRING
     _second_footer_substring = SECOND_FOOTER_SUBSTRING
 
 
-class CambriaPDFTableParser(ElectionwarePDFTableParser):
+class CambriaPDFTableParser(ElectionwarePerPrecinctPDFTableParser):
     _county = COUNTY
     _expected_table_headers = EXPECTED_TABLE_HEADERS
     _openelections_mapped_header = OPENELECTIONS_MAPPED_HEADER
@@ -77,7 +78,7 @@ class CambriaPDFTableParser(ElectionwarePDFTableParser):
         row['candidate'] = row['candidate'].title()
 
 
-class CambriaPDFPageParser(ElectionwarePDFPageParser):
+class CambriaPDFPageParser(ElectionwarePerPrecinctPDFPageParser):
     _pdf_string_iterator_clazz = CambriaPDFStringIterator
     _pdf_table_parser_clazz = CambriaPDFTableParser
     _header = CAMBRIA_HEADER
@@ -85,6 +86,6 @@ class CambriaPDFPageParser(ElectionwarePDFPageParser):
 
 if __name__ == "__main__":
     with open(OUTPUT_FILE, 'w', newline='') as f:
-        pdf_to_csv(PDFPageIterator(CAMBRIA_FILE),
-                   csv.DictWriter(f, OUTPUT_HEADER),
-                   CambriaPDFPageParser)
+        electionware_per_precinct_pdf_to_csv(PDFPageIterator(CAMBRIA_FILE),
+                                             csv.DictWriter(f, OUTPUT_HEADER),
+                                             CambriaPDFPageParser)

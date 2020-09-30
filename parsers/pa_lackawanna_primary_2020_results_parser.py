@@ -1,8 +1,9 @@
 import csv
 import os
 from parsers.pa_pdf_parser import PDFPageIterator
-from parsers.electionware_parser import pdf_to_csv, ElectionwarePDFStringIterator, \
-    ElectionwarePDFTableParser, ElectionwarePDFPageParser
+from parsers.electionware.per_precinct_parser import electionware_per_precinct_pdf_to_csv,\
+    ElectionwarePerPrecinctPDFStringIterator, ElectionwarePerPrecinctPDFTableParser,\
+    ElectionwarePerPrecinctPDFPageParser
 
 COUNTY = 'Lackawanna'
 
@@ -59,12 +60,12 @@ RAW_OFFICE_TO_OFFICE_AND_DISTRICT = {
 }
 
 
-class LackawannaPDFStringIterator(ElectionwarePDFStringIterator):
+class LackawannaPDFStringIterator(ElectionwarePerPrecinctPDFStringIterator):
     _first_footer_substring = FIRST_FOOTER_SUBSTRING
     _second_footer_substring = SECOND_FOOTER_SUBSTRING
 
 
-class LackawannaPDFTableParser(ElectionwarePDFTableParser):
+class LackawannaPDFTableParser(ElectionwarePerPrecinctPDFTableParser):
     _county = COUNTY
     _expected_table_headers = EXPECTED_TABLE_HEADERS
     _openelections_mapped_header = OPENELECTIONS_MAPPED_HEADER
@@ -76,7 +77,7 @@ class LackawannaPDFTableParser(ElectionwarePDFTableParser):
         row['office'] = row['office'].title()
 
 
-class LackawannaPDFPageParser(ElectionwarePDFPageParser):
+class LackawannaPDFPageParser(ElectionwarePerPrecinctPDFPageParser):
     _pdf_string_iterator_clazz = LackawannaPDFStringIterator
     _pdf_table_parser_clazz = LackawannaPDFTableParser
     _header = LACKAWANNA_HEADER
@@ -84,6 +85,6 @@ class LackawannaPDFPageParser(ElectionwarePDFPageParser):
 
 if __name__ == "__main__":
     with open(OUTPUT_FILE, 'w', newline='') as f:
-        pdf_to_csv(PDFPageIterator(LACKAWANNA_FILE),
-                   csv.DictWriter(f, OUTPUT_HEADER),
-                   LackawannaPDFPageParser)
+        electionware_per_precinct_pdf_to_csv(PDFPageIterator(LACKAWANNA_FILE),
+                                             csv.DictWriter(f, OUTPUT_HEADER),
+                                             LackawannaPDFPageParser)

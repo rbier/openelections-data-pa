@@ -1,8 +1,9 @@
 import csv
 import os
 from parsers.constants.pa_candidates_2020 import STATEWIDE_PRIMARY_CANDIDATES
-from parsers.electionware_pdf_parser_variant import pdf_to_csv, Candidate, ElectionwareOffice, \
-    ElectionwarePDFPageParser, ElectionwarePDFTableBodyParser, ElectionwarePDFTableHeaderParser
+from parsers.electionware.per_office_parser import electionware_per_office_pdf_to_csv, Candidate, ElectionwareOffice, \
+    ElectionwarePerOfficePDFPageParser, ElectionwarePerOfficePDFTableBodyParser, \
+    ElectionwarePerOfficePDFTableHeaderParser, ElectionwarePerOfficePDFStringIterator
 from parsers.pa_pdf_parser import PDFPageIterator
 
 
@@ -108,6 +109,10 @@ VALID_SUBHEADERS = STATEWIDE_PRIMARY_CANDIDATES | {
 }
 
 
+class BerksElectionwarePDFStringIterator(ElectionwarePerOfficePDFStringIterator):
+    _first_footer_substring = FIRST_FOOTER_SUBSTRING
+
+
 class BerksOffice(ElectionwareOffice):
     _valid_headers = VALID_HEADERS
     _offices_with_districts = OFFICES_WITH_DISTRICTS
@@ -116,7 +121,7 @@ class BerksOffice(ElectionwareOffice):
         return 'DELEGATE' not in self.name
 
 
-class BerksPDFTableHeaderParser(ElectionwarePDFTableHeaderParser):
+class BerksPDFTableHeaderParser(ElectionwarePerOfficePDFTableHeaderParser):
     _office_clazz = BerksOffice
 
     def _parse_headers(self):
@@ -131,18 +136,17 @@ class BerksPDFTableHeaderParser(ElectionwarePDFTableHeaderParser):
                 if not office.is_terminal():
                     office = None
 
-    def _parse_subheaders(self, offices):
-        for office in offices:
-            candidate = None
-            while not (candidate and candidate in TERMINAL_SUBHEADER_STRINGS):
-                candidate = self._process_next_subheader_string(candidate)
-                if candidate in VALID_SUBHEADERS:
-                    yield from self._process_candidate(candidate, office)
-                    if candidate not in TERMINAL_SUBHEADER_STRINGS:
-                        candidate = None
+    def _parse_subheader(self, office):
+        candidate = None
+        while candidate not in TERMINAL_SUBHEADER_STRINGS:
+            candidate = self._process_next_subheader_string(candidate)
+            if candidate in VALID_SUBHEADERS:
+                yield from self._process_candidate(candidate, office)
+                if candidate not in TERMINAL_SUBHEADER_STRINGS:
+                    candidate = None
 
     @classmethod
-    def _process_candidate(self, candidate, office):
+    def _process_candidate(cls, candidate, office):
         if office.name == 'STATISTICS':
             assert(candidate == 'Ballots Cast - Total')
             yield Candidate('Ballots Cast', '', '', '')
@@ -154,27 +158,26 @@ class BerksPDFTableHeaderParser(ElectionwarePDFTableHeaderParser):
             yield Candidate(office.name, office.district, office.party, candidate)
 
 
-class BerksPDFTableBodyParser(ElectionwarePDFTableBodyParser):
-    _first_footer_substring = FIRST_FOOTER_SUBSTRING
+class BerksPDFTableBodyParser(ElectionwarePerOfficePDFTableBodyParser):
     _county = COUNTY
 
 
-class BerksPDFPageParser(ElectionwarePDFPageParser):
-    _standard_header = BERKS_HEADER
-    _first_footer_substring = FIRST_FOOTER_SUBSTRING
+class BerksPDFPageParser(ElectionwarePerOfficePDFPageParser):
+    _header = BERKS_HEADER
+    _pdf_string_iterator_clazz = BerksElectionwarePDFStringIterator
     _table_header_parser_clazz = BerksPDFTableHeaderParser
     _table_body_parser_clazz = BerksPDFTableBodyParser
 
-    def _init_header(self, strings):
+    def _get_strings(self, page):
+        strings = page.get_strings()
         if 'CITY OF READING QUESTIONS' in strings[3:5]:
             # skip these pages; different format than others and are amendment questions
-            self._strings = [FIRST_FOOTER_SUBSTRING]
-        else:
-            super()._init_header(strings)
+            return self._header + [FIRST_FOOTER_SUBSTRING]
+        return strings
 
 
 if __name__ == "__main__":
     with open(OUTPUT_FILE, 'w', newline='') as f:
-        pdf_to_csv(PDFPageIterator(BERKS_FILE),
-                   csv.DictWriter(f, OUTPUT_HEADER),
-                   BerksPDFPageParser)
+        electionware_per_office_pdf_to_csv(PDFPageIterator(BERKS_FILE),
+                                           csv.DictWriter(f, OUTPUT_HEADER),
+                                           BerksPDFPageParser)

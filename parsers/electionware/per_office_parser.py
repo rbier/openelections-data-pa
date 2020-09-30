@@ -76,13 +76,22 @@ class ElectionwareOffice:
             .replace('  ', ' ')
 
 
-class ElectionwarePDFTableHeaderParser(PDFStringIterator):
+class ElectionwarePerOfficePDFStringIterator(PDFStringIterator):
+    _first_footer_substring = None
+
+    def page_is_done(self):
+        s = self.peek()
+        return s.startswith(self._first_footer_substring)
+
+
+class ElectionwarePerOfficePDFTableHeaderParser:
     _office_clazz = None
 
-    def __init__(self, strings, previous_table_header):
-        super().__init__(strings)
+    def __init__(self, string_iterator, previous_table_header):
+        self._string_iterator = string_iterator
         self._candidates = None
         self._previous_table_header = previous_table_header
+        self._processed_strings = []
 
     def get_candidates(self):
         if self._candidates is None:
@@ -92,7 +101,7 @@ class ElectionwarePDFTableHeaderParser(PDFStringIterator):
     def get_table_headers(self):
         if self._candidates is None:
             self._parse()
-        return self.get_processed_strings()
+        return self._processed_strings
 
     def _parse(self):
         offices = list(self._parse_headers())
@@ -109,55 +118,56 @@ class ElectionwarePDFTableHeaderParser(PDFStringIterator):
         raise NotImplementedError
 
     def _process_next_header_string(self, office):
-        s = self._get_next_string()
+        s = self._next_string()
         if not office:
             return self._office_clazz(s)
         return office.append(s)
 
     def _process_next_subheader_string(self, candidate):
-        s = self._get_next_string()
+        s = self._next_string()
         if self._ignorable_string(s):
             return None
         if not candidate:
             return s
         return candidate + ' ' + s
 
+    def _next_string(self):
+        s = next(self._string_iterator)
+        self._processed_strings.append(s)
+        return s
+
     @staticmethod
     def _ignorable_string(s):
         return s == '-' or s.startswith('VOTE FOR')
 
     @classmethod
-    def _process_candidate(self, candidate, office):
+    def _process_candidate(cls, candidate, office):
         raise NotImplementedError
 
 
-class ElectionwarePDFTableBodyParser(PDFStringIterator):
-    _first_footer_substring = None
+class ElectionwarePerOfficePDFTableBodyParser:
     _county = None
 
-    def __init__(self, strings, candidates):
-        super().__init__(strings)
+    def __init__(self, string_iterator, candidates):
+        self._string_iterator = string_iterator
         self._candidates = candidates
         self._table_is_done = False
 
     def __iter__(self):
-        while not self._table_is_done and not self._page_is_done():
-            precinct = self._get_next_string()
+        while not self._table_is_done and not self._string_iterator.page_is_done():
+            precinct = next(self._string_iterator)
             yield from self._parse_row(precinct)
 
     def table_is_done(self):
         return self._table_is_done
 
-    def _page_is_done(self):
-        return self._peek_next_string().startswith(self._first_footer_substring)
-
     def _parse_row(self, precinct):
         self._table_is_done = precinct == LAST_ROW_PRECINCT
         for candidate in self._candidates:
-            if self._table_is_done and self._page_is_done():
+            if self._table_is_done and self._string_iterator.page_is_done():
                 # totals row may not necessarily contain every column
                 break
-            votes = self._get_next_string()
+            votes = next(self._string_iterator)
             if not self._table_is_done and not self._candidate_is_invalid(candidate):
                 votes = int(votes.replace(',', ''))
                 yield ParsedRow(self._county, precinct.title(), candidate.office.title(),
@@ -165,24 +175,24 @@ class ElectionwarePDFTableBodyParser(PDFStringIterator):
                                 candidate.name.title(), votes)
 
     @classmethod
-    def _candidate_is_invalid(self, candidate):
+    def _candidate_is_invalid(cls, candidate):
         return False
 
 
-class ElectionwarePDFPageParser:
-    _standard_header = None
-    _first_footer_substring = None
+class ElectionwarePerOfficePDFPageParser:
+    _pdf_string_iterator_clazz = None
     _table_header_parser_clazz = None
     _table_body_parser_clazz = None
+    _header = None
 
     def __init__(self, page, previous_table_header):
-        strings = page.get_strings()
         self._table_body_parser = None
         self._previous_table_header = previous_table_header
-        self._init_header(strings)
+        self._string_iterator = self._pdf_string_iterator_clazz(self._get_strings(page))
+        self._verify_header()
 
     def __iter__(self):
-        while not self.page_is_done():
+        while not self._string_iterator.page_is_done():
             candidates = self._process_table_headers()
             if not candidates:
                 # any page without valid candidates has no additional
@@ -190,32 +200,29 @@ class ElectionwarePDFPageParser:
                 break
             yield from self.process_table_body(candidates)
 
-    def page_is_done(self):
-        return self._strings[0].startswith(self._first_footer_substring)
-
     def get_continued_table_header(self):
         if not self._table_body_parser or self._table_body_parser.table_is_done():
             return None
         return self._table_headers
 
-    def _init_header(self, strings):
-        header = strings[:len(self._standard_header)]
-        assert (header == self._standard_header)
-        self._strings = strings[len(self._standard_header):]
+    def _get_strings(self, page):
+        return page.get_strings()
+
+    def _verify_header(self):
+        header = [next(self._string_iterator) for _ in range(len(self._header))]
+        assert header == self._header
 
     def _process_table_headers(self):
-        table_header_parser = self._table_header_parser_clazz(self._strings, self._previous_table_header)
+        table_header_parser = self._table_header_parser_clazz(self._string_iterator, self._previous_table_header)
         self._table_headers = table_header_parser.get_table_headers()
-        self._strings = table_header_parser.get_remaining_strings()
         return table_header_parser.get_candidates()
 
     def process_table_body(self, candidates):
-        self._table_body_parser = self._table_body_parser_clazz(self._strings, candidates)
+        self._table_body_parser = self._table_body_parser_clazz(self._string_iterator, candidates)
         yield from iter(self._table_body_parser)
-        self._strings = self._table_body_parser.get_remaining_strings()
 
 
-def pdf_to_csv(pdf, csv_writer, pdf_page_parser_clazz):
+def electionware_per_office_pdf_to_csv(pdf, csv_writer, pdf_page_parser_clazz):
     csv_writer.writeheader()
     previous_table_header = None
     for page in pdf:

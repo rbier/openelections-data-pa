@@ -19,7 +19,7 @@ PARTY_ABBREVIATIONS = {
 }
 
 
-class ElectionwarePDFStringIterator(PDFStringIterator):
+class ElectionwarePerPrecinctPDFStringIterator(PDFStringIterator):
     _first_footer_substring = None
     _second_footer_substring = None
 
@@ -37,7 +37,7 @@ class ElectionwarePDFStringIterator(PDFStringIterator):
             self._strings[self._strings_offset] = s
 
 
-class ElectionwarePDFTableParser:
+class ElectionwarePerPrecinctPDFTableParser:
     _county = None
     _expected_table_headers = None
     _openelections_mapped_header = None
@@ -123,7 +123,7 @@ class ElectionwarePDFTableParser:
         return True
 
 
-class ElectionwarePDFPageParser:
+class ElectionwarePerPrecinctPDFPageParser:
     _pdf_string_iterator_clazz = None
     _pdf_table_parser_clazz = None
     _header = None
@@ -146,7 +146,7 @@ class ElectionwarePDFPageParser:
         self._precinct = next(self._string_iterator)
 
 
-def pdf_to_csv(pdf, csv_writer, pdf_page_parser_clazz):
+def electionware_per_precinct_pdf_to_csv(pdf, csv_writer, pdf_page_parser_clazz):
     csv_writer.writeheader()
     for page in pdf:
         print(f'processing page {page.get_page_number()}')

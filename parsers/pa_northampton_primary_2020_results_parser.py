@@ -1,8 +1,9 @@
 import csv
 import os
 from parsers.pa_pdf_parser import PDFPageIterator
-from parsers.electionware_parser import pdf_to_csv, ElectionwarePDFStringIterator, \
-    ElectionwarePDFTableParser, ElectionwarePDFPageParser
+from parsers.electionware.per_precinct_parser import electionware_per_precinct_pdf_to_csv,\
+    ElectionwarePerPrecinctPDFStringIterator, ElectionwarePerPrecinctPDFTableParser,\
+    ElectionwarePerPrecinctPDFPageParser
 
 COUNTY = 'Northampton'
 
@@ -60,12 +61,12 @@ RAW_OFFICE_TO_OFFICE_AND_DISTRICT = {
 }
 
 
-class NorthamptonPDFStringIterator(ElectionwarePDFStringIterator):
+class NorthamptonPDFStringIterator(ElectionwarePerPrecinctPDFStringIterator):
     _first_footer_substring = FIRST_FOOTER_SUBSTRING
     _second_footer_substring = SECOND_FOOTER_SUBSTRING
 
 
-class NorthamptonPDFTableParser(ElectionwarePDFTableParser):
+class NorthamptonPDFTableParser(ElectionwarePerPrecinctPDFTableParser):
     _county = COUNTY
     _expected_table_headers = EXPECTED_TABLE_HEADERS
     _openelections_mapped_header = OPENELECTIONS_MAPPED_HEADER
@@ -82,7 +83,7 @@ class NorthamptonPDFTableParser(ElectionwarePDFTableParser):
         return True
 
 
-class NorthamptonPDFPageParser(ElectionwarePDFPageParser):
+class NorthamptonPDFPageParser(ElectionwarePerPrecinctPDFPageParser):
     _pdf_string_iterator_clazz = NorthamptonPDFStringIterator
     _pdf_table_parser_clazz = NorthamptonPDFTableParser
     _header = NORTHAMPTON_HEADER
@@ -90,6 +91,6 @@ class NorthamptonPDFPageParser(ElectionwarePDFPageParser):
 
 if __name__ == "__main__":
     with open(OUTPUT_FILE, 'w', newline='') as f:
-        pdf_to_csv(PDFPageIterator(NORTHAMPTON_FILE),
-                   csv.DictWriter(f, OUTPUT_HEADER),
-                   NorthamptonPDFPageParser)
+        electionware_per_precinct_pdf_to_csv(PDFPageIterator(NORTHAMPTON_FILE),
+                                             csv.DictWriter(f, OUTPUT_HEADER),
+                                             NorthamptonPDFPageParser)
